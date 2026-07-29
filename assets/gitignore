@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Éditeurs
+.idea/
+.vscode/
+*.sublime-*
+
+# Dépendances
+node_modules/
+vendor/
+
+# Build / logs
+*.log
+*.map
+.cache/
