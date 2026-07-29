@@ -8,7 +8,7 @@ L'installation manuelle laisse toujours traîner quelque chose : un contenu de d
 
 | | |
 |---|---|
-| Environnement | DDEV sur OrbStack, PHP 8.3, MariaDB 10.11 |
+| Environnement | DDEV (OrbStack sur macOS, WSL2 sur Windows), PHP 8.3, MariaDB 10.11 |
 | WordPress | dernière version, en français, permaliens propres |
 | Constructeur | Elementor + thème parent Hello Elementor |
 | Thème | thème enfant prêt à personnaliser, versionné avec Git |
@@ -21,29 +21,53 @@ Le site est utilisable immédiatement : il ne reste qu'à ouvrir la page d'accue
 
 ## Prérequis
 
-À installer une fois pour toutes sur votre machine :
+Trois outils, à installer une fois pour toutes : un moteur de conteneurs, [DDEV](https://docs.ddev.com/) qui orchestre l'environnement WordPress, et [Claude Code](https://code.claude.com/docs/en/setup) qui exécute le skill. Le [GitHub CLI](https://cli.github.com/) (`gh`) est facultatif : il ne sert qu'à créer le dépôt du thème.
 
-- [OrbStack](https://orbstack.dev/) — fait tourner les conteneurs (alternative légère à Docker Desktop, sur macOS)
-- [DDEV](https://ddev.readthedocs.io/en/stable/users/install/ddev-installation/) — orchestre l'environnement WordPress
-- [Claude Code](https://claude.com/claude-code) — exécute le skill
-- [GitHub CLI](https://cli.github.com/) (`gh`) — facultatif, seulement pour créer le dépôt du thème
+### macOS
 
-Sur macOS avec Homebrew :
+[OrbStack](https://orbstack.dev/) fait tourner les conteneurs — c'est une alternative à Docker Desktop, plus légère et plus rapide.
 
 ```bash
-brew install ddev/ddev/ddev gh
 brew install --cask orbstack
+brew install ddev/ddev/ddev gh
+curl -fsSL https://claude.ai/install.sh | bash
 ```
 
-Vérifiez ensuite que tout répond :
+### Windows
+
+**Tout se passe dans WSL2**, le sous-système Linux de Windows. Ce n'est pas une préférence de confort, mais une contrainte technique : DDEV demande que les projets vivent dans le système de fichiers WSL2 plutôt que sur le disque `C:`, sous peine de lenteurs marquées et de problèmes de permissions. OrbStack, de son côté, n'existe pas sur Windows — c'est Docker qui tourne à l'intérieur de WSL2.
+
+Dans PowerShell, installez WSL2 :
+
+```powershell
+wsl --install --no-distribution
+wsl --update
+wsl --install Ubuntu-26.04 --name DDEV
+```
+
+Installez ensuite DDEV avec son programme d'installation Windows, en suivant [la procédure officielle](https://docs.ddev.com/en/stable/users/install/ddev-installation/#windows) — choisissez l'option « Docker CE inside WSL2 », celle que DDEV recommande pour les performances.
+
+**Basculez enfin dans un terminal WSL2** — plus PowerShell — pour installer Claude Code :
 
 ```bash
-ddev version && docker version && gh auth status
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+Claude Code doit impérativement être installé et lancé **depuis WSL2**. Installé côté Windows, il écrirait le skill dans `C:\Users\...\.claude` alors que vos projets vivent dans WSL2 : il ne le trouverait jamais.
+
+Une fois dans WSL2, vous êtes sous Linux. Tout le reste de ce README s'applique à l'identique, chemins `~/` compris.
+
+### Vérifier
+
+Depuis le terminal où vous travaillerez — celui de macOS, ou celui de WSL2 :
+
+```bash
+ddev version && docker version && claude --version
 ```
 
 ## Installation du skill
 
-Clonez le dépôt dans le dossier des skills de Claude Code :
+Clonez le dépôt dans le dossier des skills de Claude Code — sur Windows, depuis votre terminal WSL2 :
 
 ```bash
 git clone https://github.com/maximebj/install-wordpress-elementor.git \
@@ -59,9 +83,11 @@ Le skill est global : il fonctionne depuis n'importe quel dossier, pas seulement
 Créez un dossier vide, placez-vous dedans, et lancez Claude Code :
 
 ```bash
-mkdir ~/Sites/mon-nouveau-site && cd ~/Sites/mon-nouveau-site
+mkdir -p ~/Sites/mon-nouveau-site && cd ~/Sites/mon-nouveau-site
 claude
 ```
+
+Sur Windows, ce dossier doit se trouver dans votre répertoire personnel WSL2 (`~/`, soit `/home/votre-nom/`) et surtout pas dans `/mnt/c/`. Un projet posé sur le disque Windows fonctionne, mais devient très lent et provoque des erreurs de permissions.
 
 Puis demandez simplement :
 
@@ -93,7 +119,7 @@ ddev stop | ddev start
 
 **Les e-mails ne partent pas vraiment.** Mailpit les intercepte tous. C'est voulu : un site de test ne doit jamais écrire à de vraies personnes. Consultez-les avec `ddev launch -m`.
 
-**L'URL contient parfois un port** (`https://mon-site.ddev.site:33001`). Cela arrive quand un serveur web tourne déjà sur votre machine et occupe les ports 80 et 443 — souvent Herd, Valet ou un nginx installé via Homebrew. Le site fonctionne normalement ; pour retrouver une adresse sans port, arrêtez ce serveur puis relancez `ddev restart`.
+**L'URL contient parfois un port** (`https://mon-site.ddev.site:33001`). Cela arrive quand un serveur web occupe déjà les ports 80 et 443 : sur macOS, souvent Herd, Valet ou un nginx installé via Homebrew ; sur Windows, IIS ou un autre service à l'écoute. Le site fonctionne tout à fait normalement ainsi. Pour retrouver une adresse sans port, arrêtez le serveur en question puis relancez `ddev restart`.
 
 **Le dépôt Git ne couvre que le thème enfant**, jamais la racine du site. Versionner tout WordPress mettrait `wp-config.php` — donc les identifiants de la base — dans l'historique Git.
 
