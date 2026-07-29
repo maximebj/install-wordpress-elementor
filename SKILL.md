@@ -1,6 +1,6 @@
 ---
 name: install-wordpress-elementor
-description: Installe de zéro un site WordPress local complet en **stack Elementor**, avec DDEV et OrbStack — WordPress en français, Elementor, thème enfant Hello Elementor versionné, pages Accueil/Blog/Contact avec menu classique, extensions Yoast SEO / Complianz / WPS Hide Login, ménage complet des contenus par défaut, et dépôt GitHub privé. Utilise ce skill dès que l'utilisateur veut créer, installer, monter ou démarrer un nouveau site WordPress en local — « installe un WordPress », « nouveau site WP », « monte-moi un site local », « on démarre un nouveau projet client » — même s'il ne mentionne explicitement ni DDEV, ni Elementor, ni GitHub. C'est le skill par défaut pour un nouveau site. En revanche, si l'utilisateur demande explicitement du WordPress natif, du FSE, un thème de blocs ou l'éditeur de site (Full Site Editing), ce n'est pas ce skill : Elementor et l'édition de site native sont deux approches concurrentes qu'on ne mélange pas.
+description: Installe de zéro un site WordPress local complet en **stack Elementor**, avec DDEV et OrbStack — WordPress en français, Elementor, thème enfant Hello Elementor versionné, pages Accueil/Blog/Contact avec menu classique, extensions Yoast SEO / Complianz / WPS Hide Login, navigateur de base de données Adminer, capture des e-mails via Mailpit, ménage complet des contenus par défaut, et dépôt GitHub privé. Utilise ce skill dès que l'utilisateur veut créer, installer, monter ou démarrer un nouveau site WordPress en local — « installe un WordPress », « nouveau site WP », « monte-moi un site local », « on démarre un nouveau projet client » — même s'il ne mentionne explicitement ni DDEV, ni Elementor, ni GitHub. C'est le skill par défaut pour un nouveau site. En revanche, si l'utilisateur demande explicitement du WordPress natif, du FSE, un thème de blocs ou l'éditeur de site (Full Site Editing), ce n'est pas ce skill : Elementor et l'édition de site native sont deux approches concurrentes qu'on ne mélange pas.
 ---
 
 # Installation d'un site WordPress local — stack Elementor
@@ -53,10 +53,17 @@ Annonce le nom retenu à l'utilisateur, puis enchaîne sans attendre de réponse
 ```bash
 ddev config --project-type=wordpress --project-name="$PROJECT_SLUG" \
   --docroot=. --php-version=8.3 --database=mariadb:10.11
+ddev add-on get ddev/ddev-adminer
 ddev start -y
 ```
 
 `--docroot=.` installe WordPress à la racine du dossier plutôt que dans un sous-dossier.
+
+**Adminer** est le navigateur de base de données du projet. L'ordre compte : installé entre `config` et `start`, son conteneur démarre du premier coup. Installé après, il exige un `ddev restart` supplémentaire.
+
+Il est déclaré dans le `.ddev/` du projet, donc il suit le dépôt : n'importe qui lançant `ddev start` l'obtient sans rien installer sur sa machine ni connaître le moindre identifiant. C'est ce qui le rend adapté au travail à plusieurs, là où un client natif suppose une installation locale.
+
+**Mailpit n'a rien à installer** : DDEV l'intègre nativement et route déjà les mails PHP vers lui. Tout `wp_mail()` est capturé au lieu de partir pour de vrai — ce qui évite d'arroser de vraies adresses depuis un site de test. Il suffit de le signaler dans le rapport final.
 
 **Récupère ensuite l'URL réelle — ne la reconstruis jamais à la main :**
 
@@ -239,6 +246,32 @@ ddev wp plugin list --fields=name,status,version
 ddev wp theme list --fields=name,status,version
 ```
 
+Contrôle aussi les deux services annexes, et relève leurs URLs pour le rapport final :
+
+```bash
+ddev describe -j 2>/dev/null | python3 -c "
+import sys,json
+r = json.load(sys.stdin)['raw']
+print('mailpit :', r.get('mailpit_https_url'))
+for s in r.get('services', {}).values():
+    if 'adminer' in str(s.get('full_name', s.get('short_name',''))).lower():
+        print('adminer :', s.get('https_url'))
+"
+```
+
+Adminer répond par un 302 vers un formulaire pré-rempli — suis la redirection et attends-toi à un titre contenant « Adminer ». Pour Mailpit, le test qui compte est qu'un mail émis par WordPress y arrive vraiment :
+
+```bash
+ddev wp eval 'wp_mail( "test@local.test", "Test Mailpit", "Test." );'
+curl -sk "<URL_MAILPIT>/api/v1/messages?limit=1" | grep -o '"Subject":"[^"]*"'
+```
+
+Purge ensuite la boîte pour livrer un environnement propre :
+
+```bash
+curl -sk -X DELETE "<URL_MAILPIT>/api/v1/messages"
+```
+
 Attendu : chaque page renvoie un titre contenant son propre nom, et les trois entrées de menu apparaissent dans le HTML du front.
 
 Quelques repères pour lire ces résultats :
@@ -288,6 +321,7 @@ Présente un récapitulatif compact :
 - **Identifiants** : `admin` + le mot de passe généré, avec sa localisation dans `.ddev/.admin-pass`
 - **Stack** : versions de WordPress, PHP, base de données, thème, extensions
 - **Dépôt** : URL GitHub et visibilité, ou mention qu'il est resté local
+- **Outils** : URL d'Adminer et URL de Mailpit, relevées à l'étape 9
 - **Ports** : si DDEV a basculé sur des ports non standard, explique pourquoi et comment y remédier (arrêter le serveur natif, puis `ddev restart`)
 
 Termine par les commandes utiles :
@@ -295,10 +329,15 @@ Termine par les commandes utiles :
 ```bash
 ddev wp <commande>   # WP-CLI dans le conteneur
 ddev ssh             # shell du conteneur
-ddev mysql           # client base de données
+ddev mysql           # client base de données en ligne de commande
+ddev adminer         # navigateur de base de données, dans le navigateur web
+ddev tableplus       # ouvre TablePlus sur la base, s'il est installé sur la machine
+ddev launch -m       # Mailpit : tous les e-mails émis par le site
 ddev describe        # URLs et état
 ddev stop | start
 ```
+
+Précise l'usage de chacun plutôt que de les lister à plat : `ddev mysql` pour une vérification rapide ou un script, `ddev adminer` pour explorer sans rien installer, `ddev tableplus` pour du travail de fond si le client natif est présent.
 
 Précise que `ddev wp` est obligatoire : un WP-CLI installé sur la machine hôte n'a pas accès à la base, qui vit dans le conteneur.
 
