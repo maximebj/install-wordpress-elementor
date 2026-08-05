@@ -121,6 +121,8 @@ ddev stop | ddev start
 
 **L'URL contient parfois un port** (`https://mon-site.ddev.site:33001`). Cela arrive quand un serveur web occupe déjà les ports 80 et 443 : sur macOS, souvent Herd, Valet ou un nginx installé via Homebrew ; sur Windows, IIS ou un autre service à l'écoute. Le site fonctionne tout à fait normalement ainsi. Pour retrouver une adresse sans port, arrêtez le serveur en question puis relancez `ddev restart`.
 
+**La configuration est volontairement figée.** Le skill exécute `ddev config --disable-settings-management` après le premier démarrage, et ajoute une extension *must-use* qui définit `WP_SECRETS_KEY`. Sans cela, DDEV réécrit `wp-config.php` à chaque `ddev restart` et régénère les sels WordPress : vous seriez déconnecté de l'administration à chaque redémarrage, et surtout toute clé d'API enregistrée dans WordPress 7 — celles des connecteurs IA, par exemple — deviendrait définitivement illisible, avec une erreur fatale à la clé. Ne remettez pas la gestion automatique en route sans savoir ce que vous perdez.
+
 **Le dépôt Git ne couvre que le thème enfant**, jamais la racine du site. Versionner tout WordPress mettrait `wp-config.php` — donc les identifiants de la base — dans l'historique Git.
 
 **Personnaliser le thème** : écrivez votre CSS dans `wp-content/themes/hello-elementor-child/style.css`, puis incrémentez la constante `_VERSION` dans `functions.php` du même dossier. Elle sert de numéro de version au fichier et force le navigateur à recharger vos styles au lieu de servir sa copie en cache.

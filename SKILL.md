@@ -55,9 +55,16 @@ ddev config --project-type=wordpress --project-name="$PROJECT_SLUG" \
   --docroot=. --php-version=8.3 --database=mariadb:10.11
 ddev add-on get ddev/ddev-adminer
 ddev start -y
+ddev config --disable-settings-management
 ```
 
 `--docroot=.` installe WordPress à la racine du dossier plutôt que dans un sous-dossier.
+
+**L'ordre des trois commandes est important.** Le premier `ddev start` génère `wp-config.php` avec les identifiants de base et un jeu de sels WordPress. Sans le troisième appel, DDEV **réécrit ce fichier à chaque démarrage et régénère les sels** — ce qui déconnecte de l'administration à chaque `ddev restart`, et surtout rend illisible tout secret chiffré à partir de ces sels (voir l'étape 3).
+
+`--disable-settings-management` gèle les fichiers déjà générés : DDEV cesse de les toucher, tout en continuant à faire tourner les conteneurs normalement. Il faut donc l'appeler **après** le premier `start`, jamais avant — sinon WordPress n'aurait aucun réglage de base de données.
+
+En contrepartie, une future version de DDEV ne pourra plus mettre ces fichiers à jour toute seule. Sur un site local dont les identifiants de base ne bougent pas, c'est sans conséquence.
 
 **Adminer** est le navigateur de base de données du projet. L'ordre compte : installé entre `config` et `start`, son conteneur démarre du premier coup. Installé après, il exige un `ddev restart` supplémentaire.
 
@@ -99,6 +106,28 @@ ddev wp core install --url="$SITE_URL" --title="$PROJECT_NAME" \
 ```
 
 L'`--url` doit être celle récupérée à l'étape 2, port compris.
+
+### Clé de chiffrement des secrets
+
+WordPress 7 chiffre les clés d'API des connecteurs IA. Sans `WP_SECRETS_KEY`, il dérive la clé de chiffrement des sels — et une régénération des sels rend ces clés définitivement illisibles, avec une **erreur fatale** qui met le site à terre, pas un simple avertissement.
+
+L'étape 2 a gelé les sels, ce qui traite déjà la cause. Cette clé dédiée est la seconde ligne de défense : elle rend le chiffrement totalement indépendant des sels, y compris si quelqu'un les régénère plus tard à la main.
+
+```bash
+mkdir -p wp-content/mu-plugins
+SECRETS_KEY=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 64)
+sed "s/{{SECRETS_KEY}}/$SECRETS_KEY/" \
+  "$HOME/.claude/skills/install-wordpress-elementor/assets/mu-secrets-key.php" \
+  > wp-content/mu-plugins/000-wp-secrets-key.php
+```
+
+C'est une extension « must-use » et non un ajout à `wp-config.php`, parce que DDEV regénère ce dernier intégralement : retirer son marqueur `#ddev-generated` ne l'en empêche pas. Le préfixe `000-` garantit un chargement précoce, bien avant que le moindre secret soit lu.
+
+Vérifie que la constante est bien prise en compte :
+
+```bash
+ddev wp eval 'echo defined("WP_SECRETS_KEY") ? "OK\n" : "ABSENTE\n";'
+```
 
 ## Étape 4 — Permaliens
 
@@ -246,6 +275,23 @@ ddev wp plugin list --fields=name,status,version
 ddev wp theme list --fields=name,status,version
 ```
 
+Contrôle que la configuration est bien figée — c'est ce qui protège les clés d'API enregistrées plus tard :
+
+```bash
+grep -c "^disable_settings_management: true" .ddev/config.yaml   # doit valoir 1
+ddev wp eval 'echo defined("WP_SECRETS_KEY") ? "clé secrets OK\n" : "clé secrets ABSENTE\n";'
+```
+
+Si le doute persiste, la preuve directe tient en trois commandes : relever l'empreinte des sels, redémarrer, la comparer.
+
+```bash
+grep -E "define\( 'LOGGED_IN_(KEY|SALT)'" wp-config.php | shasum
+ddev restart >/dev/null 2>&1
+grep -E "define\( 'LOGGED_IN_(KEY|SALT)'" wp-config.php | shasum
+```
+
+Les deux empreintes doivent être identiques. Si elles diffèrent, `--disable-settings-management` n'a pas été appliqué et toute clé d'API enregistrée sera perdue au prochain démarrage.
+
 Contrôle aussi les deux services annexes, et relève leurs URLs pour le rapport final :
 
 ```bash
@@ -353,3 +399,5 @@ Précise que `ddev wp` est obligatoire : un WP-CLI installé sur la machine hôt
 | Sortie noyée sous des `Deprecated:` | WP-CLI + PHP 8.3 | `2>/dev/null`, sans `tail` |
 | L'URL du site ne répond pas | Ports 80/443 pris, DDEV a basculé | Lire `primary_url`, étape 2 |
 | Le menu n'apparaît pas | Emplacement inexistant | `menu-1` chez Hello Elementor |
+| « Cannot decrypt master key », erreur fatale | Sels régénérés par DDEV, clé d'API devenue illisible | Étapes 2 et 3 ; la clé perdue est irrécupérable et doit être ressaisie |
+| Déconnecté de l'admin à chaque `ddev restart` | Sels régénérés | `--disable-settings-management`, étape 2 |
